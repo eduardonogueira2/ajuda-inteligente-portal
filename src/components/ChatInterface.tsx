@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Send, Bot, User, ArrowLeft, Wifi, WifiOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Message {
   id: string;
@@ -31,7 +33,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userData, onBack }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  // URL do webhook N8N - ATUALIZADO
+  // URL do webhook N8N
   const WEBHOOK_URL = 'https://hml-n8n.conexasaude.com.br/webhook/formulario-lovable';
 
   const scrollToBottom = () => {
@@ -58,20 +60,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userData, onBack }) => {
   const initializeChat = async () => {
     setIsLoading(true);
     setConnectionStatus('connecting');
-    
+
     const welcomeMessage: Message = {
       id: `msg_${Date.now()}`,
-      content: `Olá ${userData.nome}! Recebi sua solicitação e estou aqui para ajudá-lo. Como posso auxiliá-lo hoje?`,
+      content: "Olá! Sou seu assistente de IA. Como posso ajudá-lo hoje?",
       sender: 'agent',
       timestamp: new Date()
     };
-    
+
     setMessages([welcomeMessage]);
     await saveMessageToSupabase(welcomeMessage.content, 'agent');
 
     try {
       const webhookData = {
-        // Dados separados para facilitar o processamento no N8N
         sessionId: sessionId,
         action: 'initialize_chat',
         timestamp: new Date().toISOString(),
@@ -88,29 +89,44 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userData, onBack }) => {
 
       const response = await fetch(WEBHOOK_URL, {
         method: 'POST',
-        mode: 'no-cors', // Adiciona no-cors para evitar problemas de CORS
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(webhookData),
       });
 
-      // Com mode: no-cors, não conseguimos verificar response.ok
-      // Assumimos que a requisição foi enviada com sucesso
-      setConnectionStatus('connected');
-      
-      toast({
-        title: "Chat Inicializado",
-        description: "Dados enviados para o agente. Aguarde a resposta.",
-      });
+      if (response.ok) {
+        const responseData = await response.json();
+        
+        // Verifica se há uma resposta do agente
+        if (responseData && responseData.message) {
+          const agentResponse: Message = {
+            id: `msg_${Date.now() + 1}`,
+            content: responseData.message.value || responseData.message,
+            sender: 'agent',
+            timestamp: new Date()
+          };
+          
+          setMessages(prev => [...prev, agentResponse]);
+          await saveMessageToSupabase(agentResponse.content, 'agent');
+        }
+        
+        setConnectionStatus('connected');
+        toast({
+          title: "Chat Inicializado",
+          description: "Conectado com sucesso ao agente de IA.",
+        });
+      } else {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
     } catch (error) {
       console.error('Erro ao inicializar chat:', error);
       setConnectionStatus('disconnected');
       
       toast({
-        title: "Aviso",
-        description: "Conexão com o agente pode estar instável, mas você pode continuar conversando.",
-        variant: "destructive",
+        title: "Erro de Conexão",
+        description: "Não foi possível conectar ao agente. Verifique sua conexão e tente novamente.",
+        variant: "destructive"
       });
     } finally {
       setIsLoading(false);
@@ -118,25 +134,23 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userData, onBack }) => {
   };
 
   const sendMessage = async () => {
-    if (!inputMessage.trim() || isLoading) return;
+    const messageToSend = inputMessage.trim();
+    if (!messageToSend || isLoading) return;
 
     const userMessage: Message = {
       id: `msg_${Date.now()}`,
-      content: inputMessage,
+      content: messageToSend,
       sender: 'user',
       timestamp: new Date()
     };
 
     setMessages(prev => [...prev, userMessage]);
-    await saveMessageToSupabase(inputMessage, 'user');
-    
-    const messageToSend = inputMessage;
     setInputMessage('');
+    await saveMessageToSupabase(messageToSend, 'user');
     setIsLoading(true);
 
     try {
       const webhookData = {
-        // Dados separados para facilitar o processamento no N8N
         sessionId: sessionId,
         action: 'send_message',
         timestamp: new Date().toISOString(),
@@ -153,47 +167,51 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userData, onBack }) => {
 
       const response = await fetch(WEBHOOK_URL, {
         method: 'POST',
-        mode: 'no-cors', // Adiciona no-cors para evitar problemas de CORS
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(webhookData),
       });
 
-      // Com mode: no-cors, assumimos que a requisição foi enviada
-      setConnectionStatus('connected');
-      
-      // Simula uma resposta do agente após 2 segundos
-      setTimeout(() => {
-        const agentResponse: Message = {
-          id: `msg_${Date.now() + 1}`,
-          content: "Mensagem recebida! Estou processando sua solicitação. Verifique o histórico do seu webhook N8N para confirmar o recebimento.",
-          sender: 'agent',
-          timestamp: new Date()
-        };
+      if (response.ok) {
+        const responseData = await response.json();
         
-        setMessages(prev => [...prev, agentResponse]);
-        saveMessageToSupabase(agentResponse.content, 'agent');
-      }, 2000);
+        // Verifica se há uma resposta do agente
+        if (responseData && responseData.message) {
+          const agentResponse: Message = {
+            id: `msg_${Date.now() + 1}`,
+            content: responseData.message.value || responseData.message,
+            sender: 'agent',
+            timestamp: new Date()
+          };
+          
+          setMessages(prev => [...prev, agentResponse]);
+          await saveMessageToSupabase(agentResponse.content, 'agent');
+        }
+        
+        setConnectionStatus('connected');
+      } else {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error);
       setConnectionStatus('disconnected');
-      
+
       const fallbackResponse: Message = {
         id: `msg_${Date.now() + 1}`,
         content: "Desculpe, estou com dificuldades técnicas no momento. Tente novamente em alguns instantes.",
         sender: 'agent',
         timestamp: new Date()
       };
-      
+
       setMessages(prev => [...prev, fallbackResponse]);
       await saveMessageToSupabase(fallbackResponse.content, 'agent');
-      
+
       toast({
-        title: "Erro de Conexão",
-        description: "Falha ao enviar mensagem. Resposta simulada fornecida.",
-        variant: "destructive",
+        title: "Erro ao Enviar",
+        description: "Não foi possível enviar a mensagem. Tente novamente.",
+        variant: "destructive"
       });
     } finally {
       setIsLoading(false);
@@ -248,85 +266,83 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userData, onBack }) => {
         </div>
       </div>
 
-      {/* Messages Container */}
+      {/* Messages Area */}
       <div className="flex-1 overflow-hidden">
-        <div className="h-full max-w-4xl mx-auto flex flex-col">
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div className={`flex items-start space-x-3 max-w-[70%] ${
-                  message.sender === 'user' ? 'flex-row-reverse space-x-reverse' : ''
+        <div className="h-full overflow-y-auto p-4 space-y-4 max-w-4xl mx-auto">
+          {messages.map((message) => (
+            <div key={message.id} className={`flex ${
+              message.sender === 'user' ? 'justify-end' : 'justify-start'
+            }`}>
+              <div className={`flex items-start space-x-3 max-w-[70%] ${
+                message.sender === 'user' ? 'flex-row-reverse space-x-reverse' : ''
+              }`}>
+                <div className={`p-2 rounded-full transition-smooth ${
+                  message.sender === 'user' 
+                    ? 'bg-gradient-primary text-primary-foreground shadow-lg' 
+                    : 'bg-muted border border-border'
                 }`}>
-                  <div className={`p-2 rounded-full transition-smooth ${
-                    message.sender === 'user' 
-                      ? 'bg-gradient-primary text-primary-foreground shadow-lg' 
-                      : 'bg-muted border border-border'
-                  }`}>
-                    {message.sender === 'user' ? (
-                      <User className="h-4 w-4" />
-                    ) : (
-                      <Bot className="h-4 w-4" />
-                    )}
-                  </div>
-                  <div className={`p-3 rounded-lg transition-smooth ${
-                    message.sender === 'user'
-                      ? 'bg-chat-user-bg text-chat-user-fg shadow-lg'
-                      : 'bg-chat-agent-bg text-chat-agent-fg border border-border'
-                  }`}>
-                    <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
-                    <span className={`text-xs mt-2 block opacity-70`}>
-                      {message.timestamp.toLocaleTimeString('pt-BR', { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                      })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-            
-            {isLoading && (
-              <div className="flex justify-start">
-                <div className="flex items-start space-x-3">
-                  <div className="p-2 rounded-full bg-muted border border-border">
+                  {message.sender === 'user' ? (
+                    <User className="h-4 w-4" />
+                  ) : (
                     <Bot className="h-4 w-4" />
-                  </div>
-                  <div className="bg-chat-agent-bg text-chat-agent-fg border border-border p-3 rounded-lg">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" />
-                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
-                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
-                    </div>
+                  )}
+                </div>
+                <div className={`p-3 rounded-lg transition-smooth ${
+                  message.sender === 'user'
+                    ? 'bg-chat-user-bg text-chat-user-fg shadow-lg'
+                    : 'bg-chat-agent-bg text-chat-agent-fg border border-border'
+                }`}>
+                  <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                  <span className={`text-xs mt-2 block opacity-70`}>
+                    {message.timestamp.toLocaleTimeString('pt-BR', { 
+                      hour: '2-digit', 
+                      minute: '2-digit' 
+                    })}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {isLoading && (
+            <div className="flex justify-start">
+              <div className="flex items-start space-x-3">
+                <div className="p-2 rounded-full bg-muted border border-border">
+                  <Bot className="h-4 w-4" />
+                </div>
+                <div className="bg-chat-agent-bg text-chat-agent-fg border border-border p-3 rounded-lg">
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" />
+                    <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
+                    <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
                   </div>
                 </div>
               </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* Input Area */}
-          <div className="border-t border-border p-4 bg-card backdrop-blur-sm bg-opacity-95">
-            <div className="flex space-x-2">
-              <Input
-                value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Digite sua mensagem..."
-                className="flex-1 transition-smooth"
-                disabled={isLoading}
-              />
-              <Button 
-                onClick={sendMessage}
-                disabled={!inputMessage.trim() || isLoading}
-                size="icon"
-                className="transition-smooth"
-              >
-                <Send className="h-4 w-4" />
-              </Button>
             </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input Area */}
+        <div className="border-t border-border p-4 bg-card backdrop-blur-sm bg-opacity-95">
+          <div className="flex space-x-2">
+            <Input
+              value={inputMessage}
+              onChange={(e) => setInputMessage(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="Digite sua mensagem..."
+              className="flex-1 transition-smooth"
+              disabled={isLoading}
+            />
+            <Button 
+              onClick={sendMessage}
+              disabled={!inputMessage.trim() || isLoading}
+              size="icon"
+              className="transition-smooth"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       </div>
@@ -335,3 +351,4 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userData, onBack }) => {
 };
 
 export default ChatInterface;
+
