@@ -67,7 +67,7 @@ const SupportForm = () => {
       console.log('Dados do formulário:', formData);
       
       // Simula chamada para o webhook
-      await fetch("https://seu-n8n.com/webhook/formulario-lovable", {
+      await fetch("https://hml-n8n.conexasaude.com.br/webhook/formulario-lovable", {
       method: "POST",
       headers: {
       "Content-Type": "application/json",
