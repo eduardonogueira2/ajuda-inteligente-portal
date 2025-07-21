@@ -76,6 +76,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userData, onBack }) => {
       // Enviar dados iniciais para o webhook
       await fetch('https://hml-n8n.conexasaude.com.br/webhook-test/formulario-lovable', {
         method: 'POST',
+        mode: 'no-cors',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -116,8 +117,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userData, onBack }) => {
 
     try {
       // Enviar mensagem para o webhook
-      const response = await fetch('https://hml-n8n.conexasaude.com.br/webhook-test/formulario-lovable', {
+      await fetch('https://hml-n8n.conexasaude.com.br/webhook-test/formulario-lovable', {
         method: 'POST',
+        mode: 'no-cors',
         headers: {
           'Content-Type': 'application/json',
         },
