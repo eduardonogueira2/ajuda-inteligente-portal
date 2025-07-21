@@ -32,6 +32,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userData, onBack }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
+  // URL CORRIGIDA DO WEBHOOK
+  const WEBHOOK_URL = 'https://hml-n8n.conexasaude.com.br/webhook/095f8af1-e624-4717-ba07-c22f035c1814';
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -41,7 +44,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userData, onBack }) => {
   }, [messages]);
 
   useEffect(() => {
-    // Enviar dados iniciais para o webhook e iniciar conversa
     initializeChat();
   }, []);
 
@@ -61,7 +63,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userData, onBack }) => {
   const initializeChat = async () => {
     setIsLoading(true);
     
-    // Adicionar mensagem de boas-vindas
     const welcomeMessage: Message = {
       id: `msg_${Date.now()}`,
       content: `Olá ${userData.nome}! Recebi sua solicitação e estou aqui para ajudá-lo. Como posso auxiliá-lo hoje?`,
@@ -73,19 +74,36 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userData, onBack }) => {
     await saveMessageToSupabase(welcomeMessage.content, 'agent');
 
     try {
-      // Enviar dados iniciais para o webhook
-      await fetch('https://hml-n8n.conexasaude.com.br/webhook-test/formulario-lovable', {
+      // ESTRUTURA DE DADOS CORRIGIDA
+      const response = await fetch(WEBHOOK_URL, {
         method: 'POST',
-        mode: 'no-cors',
+        // REMOVIDO mode: 'no-cors' para permitir cabeçalhos corretos
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          ...userData,
           sessionId,
+          chatInput: `Inicialização do chat. Dados do usuário: Nome: ${userData.nome}, Email: ${userData.email}, Solicitação: ${userData.solicitacao}`,
+          userData,
           action: 'initialize_chat'
         }),
       });
+
+      // TRATAMENTO DA RESPOSTA DO WEBHOOK
+      if (response.ok) {
+        const responseData = await response.json();
+        if (responseData && responseData.output) {
+          const agentResponse: Message = {
+            id: `msg_${Date.now() + 1}`,
+            content: responseData.output,
+            sender: 'agent',
+            timestamp: new Date()
+          };
+          
+          setMessages(prev => [...prev, agentResponse]);
+          await saveMessageToSupabase(agentResponse.content, 'agent');
+        }
+      }
     } catch (error) {
       console.error('Erro ao inicializar chat:', error);
       toast({
@@ -116,42 +134,58 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userData, onBack }) => {
     setIsLoading(true);
 
     try {
-      // Enviar mensagem para o webhook
-      await fetch('https://hml-n8n.conexasaude.com.br/webhook-test/formulario-lovable', {
+      // ESTRUTURA DE DADOS CORRIGIDA
+      const response = await fetch(WEBHOOK_URL, {
         method: 'POST',
-        mode: 'no-cors',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           sessionId,
-          message: messageToSend,
+          chatInput: messageToSend, // CAMPO CORRIGIDO: chatInput em vez de message
           userData,
           action: 'send_message'
         }),
       });
 
-      // Simular resposta do agente (em produção, isso viria do webhook response)
-      setTimeout(() => {
-        const agentResponse: Message = {
-          id: `msg_${Date.now() + 1}`,
-          content: "Entendi sua mensagem. Estou processando sua solicitação e em breve retornarei com uma resposta detalhada.",
-          sender: 'agent',
-          timestamp: new Date()
-        };
-        
-        setMessages(prev => [...prev, agentResponse]);
-        saveMessageToSupabase(agentResponse.content, 'agent');
-        setIsLoading(false);
-      }, 2000);
+      // TRATAMENTO DA RESPOSTA DO WEBHOOK
+      if (response.ok) {
+        const responseData = await response.json();
+        if (responseData && responseData.output) {
+          const agentResponse: Message = {
+            id: `msg_${Date.now() + 1}`,
+            content: responseData.output,
+            sender: 'agent',
+            timestamp: new Date()
+          };
+          
+          setMessages(prev => [...prev, agentResponse]);
+          await saveMessageToSupabase(agentResponse.content, 'agent');
+        }
+      } else {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error);
+      
+      // FALLBACK: Resposta simulada em caso de erro
+      const fallbackResponse: Message = {
+        id: `msg_${Date.now() + 1}`,
+        content: "Desculpe, estou com dificuldades técnicas no momento. Tente novamente em alguns instantes.",
+        sender: 'agent',
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => [...prev, fallbackResponse]);
+      await saveMessageToSupabase(fallbackResponse.content, 'agent');
+      
       toast({
-        title: "Erro",
-        description: "Falha ao enviar mensagem. Tente novamente.",
+        title: "Erro de Conexão",
+        description: "Falha ao enviar mensagem. Resposta simulada fornecida.",
         variant: "destructive",
       });
+    } finally {
       setIsLoading(false);
     }
   };
