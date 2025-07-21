@@ -67,7 +67,13 @@ const SupportForm = () => {
       console.log('Dados do formulário:', formData);
       
       // Simula chamada para o webhook
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await fetch("https://seu-n8n.com/webhook/formulario-lovable", {
+      method: "POST",
+      headers: {
+      "Content-Type": "application/json",
+      },
+      body: JSON.stringify(formData),
+      });
 
       toast({
         title: "Sucesso!",
