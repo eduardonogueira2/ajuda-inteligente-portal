@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 import { Bot, MessageCircle, Send, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import ChatInterface from './ChatInterface';
 
 interface FormData {
   nome: string;
@@ -21,6 +22,7 @@ const SupportForm = () => {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Partial<FormData>>({});
+  const [showChat, setShowChat] = useState(false);
   const { toast } = useToast();
 
   const validateForm = (): boolean => {
@@ -63,25 +65,15 @@ const SupportForm = () => {
     setIsLoading(true);
 
     try {
-      // Aqui será implementada a integração com o webhook do n8n
       console.log('Dados do formulário:', formData);
       
-      // Simula chamada para o webhook
-      await fetch("https://hml-n8n.conexasaude.com.br/webhook/formulario-lovable", {
-      method: "POST",
-      headers: {
-      "Content-Type": "application/json",
-      },
-      body: JSON.stringify(formData),
-      });
-
       toast({
-        title: "Sucesso!",
-        description: "Sua solicitação foi enviada. Em breve você será atendido pelo nosso agente de IA.",
+        title: "Conectando...",
+        description: "Iniciando conversa com o agente de IA.",
       });
 
-      // Reset form
-      setFormData({ nome: '', email: '', solicitacao: '' });
+      // Abrir interface de chat
+      setShowChat(true);
       
     } catch (error) {
       console.error('Erro ao enviar solicitação:', error);
@@ -96,6 +88,15 @@ const SupportForm = () => {
   };
 
   const isFormValid = formData.nome.trim() && formData.email.trim();
+
+  if (showChat) {
+    return (
+      <ChatInterface 
+        userData={formData} 
+        onBack={() => setShowChat(false)} 
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
